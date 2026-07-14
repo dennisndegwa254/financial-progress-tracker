@@ -16,8 +16,7 @@ import uuid
 from datetime import date
 
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
+import altair as alt
 import streamlit as st
 
 from database import init_db, get_cursor
@@ -94,16 +93,14 @@ def timeframe_selector(key: str) -> str:
     return label.lower()
 
 
-def styled_chart_layout(fig, height=260):
-    fig.update_layout(
-        height=height,
-        margin=dict(l=0, r=0, t=10, b=0),
-        paper_bgcolor=SURFACE,
-        plot_bgcolor=SURFACE,
-        font=dict(color=TEXT_MUTED),
-        legend=dict(font=dict(color=TEXT_MUTED)),
+def dark_chart(chart, height=260):
+    """Apply the ledger dark theme to an Altair chart."""
+    return (
+        chart.properties(height=height, background=SURFACE)
+        .configure_axis(labelColor=TEXT_MUTED, titleColor=TEXT_MUTED, gridColor=BORDER, domainColor=BORDER)
+        .configure_view(strokeWidth=0)
+        .configure_legend(labelColor=TEXT_MUTED, titleColor=TEXT_MUTED)
     )
-    return fig
 
 
 # ---------------------------------------------------------------- Sidebar --
@@ -136,17 +133,23 @@ def render_overview():
     )
 
     if not trend.empty:
-        fig = go.Figure()
-        fig.add_trace(
-            go.Scatter(
-                x=trend["date"], y=trend["balance"], mode="lines", fill="tozeroy",
-                line=dict(color=ACCENT, width=2), fillcolor="rgba(199,162,76,0.15)",
-                name="Balance",
+        chart = (
+            alt.Chart(trend)
+            .mark_area(line={"color": ACCENT, "strokeWidth": 2}, color=alt.Gradient(
+                gradient="linear",
+                stops=[
+                    alt.GradientStop(color=ACCENT, offset=0),
+                    alt.GradientStop(color=SURFACE, offset=1),
+                ],
+                x1=1, x2=1, y1=1, y2=0,
+            ), opacity=0.6)
+            .encode(
+                x=alt.X("date:T", title=None),
+                y=alt.Y("balance:Q", title=None),
+                tooltip=[alt.Tooltip("date:T", title="Date"), alt.Tooltip("balance:Q", title="Balance", format="$,.2f")],
             )
         )
-        fig.update_xaxes(showgrid=False)
-        fig.update_yaxes(showgrid=True, gridcolor=BORDER)
-        st.plotly_chart(styled_chart_layout(fig, 280), use_container_width=True)
+        st.altair_chart(dark_chart(chart, 280), use_container_width=True)
     else:
         st.info("No transaction history yet.")
 
@@ -166,12 +169,16 @@ def render_overview():
         if cat.empty:
             st.caption("No expenses recorded in this period.")
         else:
-            fig = px.bar(
-                cat, x="amount", y="category_name", orientation="h",
-                color_discrete_sequence=[ACCENT],
+            chart = (
+                alt.Chart(cat)
+                .mark_bar(color=ACCENT, cornerRadiusTopRight=3, cornerRadiusBottomRight=3)
+                .encode(
+                    x=alt.X("amount:Q", title=None),
+                    y=alt.Y("category_name:N", title=None, sort="-x"),
+                    tooltip=[alt.Tooltip("category_name:N", title="Category"), alt.Tooltip("amount:Q", title="Spent", format="$,.2f")],
+                )
             )
-            fig.update_layout(yaxis_title="", xaxis_title="")
-            st.plotly_chart(styled_chart_layout(fig), use_container_width=True)
+            st.altair_chart(dark_chart(chart), use_container_width=True)
 
     with right:
         st.subheader("Portfolio Mix")
@@ -179,11 +186,16 @@ def render_overview():
         if holdings.empty:
             st.caption("No holdings yet.")
         else:
-            fig = px.pie(
-                holdings, values="market_value", names="symbol", hole=0.5,
-                color_discrete_sequence=px.colors.sequential.Sunset,
+            chart = (
+                alt.Chart(holdings)
+                .mark_arc(innerRadius=55)
+                .encode(
+                    theta=alt.Theta("market_value:Q"),
+                    color=alt.Color("symbol:N", scale=alt.Scale(scheme="goldgreen"), legend=alt.Legend(title=None)),
+                    tooltip=[alt.Tooltip("symbol:N", title="Asset"), alt.Tooltip("market_value:Q", title="Value", format="$,.2f")],
+                )
             )
-            st.plotly_chart(styled_chart_layout(fig), use_container_width=True)
+            st.altair_chart(dark_chart(chart), use_container_width=True)
 
 
 # =========================================================== TRANSACTIONS ==
